@@ -125,7 +125,9 @@ function result = dectobin(num)
     
     # Encontrando o sinal
     if (num < 0)
+        num *= -1;
         result(1) = 1;
+    endif
 
     i = 127; # Potência máxima
     # Encontrando a potência
@@ -153,11 +155,14 @@ function result = dectobin(num)
 
 endfunction
 
+# POR ENQUANTO, SÓ FUNCIONA PARA NÚMEROS POSITIVOS
+
 # Realiza a soma arredonda de dois números em pontos flutuantes
-function result = sumround(num1, num2)
+function result = sumround(num1, num2, rounding)
     # Caso os números não estejam em ponto flutuante:
-    num1 = normalize_ray(num1);
-    num2 = normalize_ray(num2);
+    num1 = normalize_ray(num1, rounding);
+    num2 = normalize_ray(num2, rounding);
+
     # Representação dos números acima em bits
     bits_num1 = dectobin(num1);
     bits_num2 = dectobin(num2);
@@ -169,29 +174,142 @@ function result = sumround(num1, num2)
 
     # Caso em que os expoentes são iguais:
     if (bits_num1(2) == bits_num2(2))
+        # Somando os significandos
         significand1 = num1/(2^bits_num1(2));
         significand2 = num2/(2^bits_num2(2));
         significandsum = significand1 + significand2;
+
         # Eliminação do último bit de precisão
         if (bits_num1(25) + bits_num2(25) == 1)
             significandsum -= 2^-23;
         endif
+
+        # Re-normalizando a soma
         significandsum /= 2;
+
+        # Soma
         result = significandsum*2^(bits_num1(2)+1)
     # Caso em que os expoentes são diferentes:
     else
         if (bits_num1(2) > bits_num2(2))
-            places_shifted = bits_num1(2) - bits_num2(2);
+            places_shifted = bits_num1(2) - bits_num2(2); # Mudança de expoente
             significand1 = num1/(2^bits_num1(2));
-            significand2 = num2/(2^bits_num2(2));
-            # Posicionando o significando 2 com o significando 1:
-            significand2 /= 2^places_shifted;
+            
+            # Significando 2 posicionado com o significando 1:
 
-            # FAZENDO A PARTE DE DETERMINAR OS BITS GUARDA E STINGY
-            # ALÉM DE ELIMINAR O DESNECESSRIOS NOS SIGNIFICANDOS
+            # --- SIGNIFICANDO 2 (início) ---
+
+            significand2 = 2^(-places_shifted); # Hidden bit
+            i = places_shifted + 1;
+            j = 3; # Primeira casa binária
+
+            # Preenchendo os 23 bits de precisão no novo expoente
+            while (i <= 23)
+                if (bits_num2(j) == 1) significand2 += 2^(-i);
+                endif
+                i += 1;
+                j += 1;
+            endwhile
+
+            # Preenchendo os bits auxiliares
+            if (25 - j == 0)
+                guardbit1 = bits_num2(j);
+                significand2 += 2^(-i);
+            elseif (25 - j == 1)
+                guardbit1 = bits_num2(j);
+                guardbit2 = bits_num2(j+1);
+                significand2 += (2^(-i) + 2^(-(i+1)));
+            elseif (25 - j >= 2)
+                guardbit1 = bits_num2(j);
+                guardbit2 = bits_num2(j+1);
+                significand2 += (2^(-i) + 2^(-(i+1)));
+                j += 2;
+                i += 2;
+
+                # Stingy bit
+                while (j <= 25)
+                    if (bits_num2(j) == 1)
+                        stingybit = 1;
+                        significand2 += 2^(-i);
+                        break;
+                    endif
+                    j += 1;
+                endwhile
+            endif
+
+            # --- SIGNIFICANDO 2 (fim) ---
+
+            # Somando os significandos
+            significandsum = significand1 + significand2;
+            d = 0; # Deslocamento
+            if (significandsum >= 2)
+                significandsum /= 2; # Tornando o hidden bit igual a 1
+                d = 1;
+            endif
+            significandsum = normalize_ray(significandsum, rounding); # Arredondando
+
+            # Soma
+            result = significandsum*2^(bits_num1(2) + d);
 
         else
-            places_shifted = bits_num2(2) - bits_num1(2);
+            places_shifted = bits_num2(2) - bits_num1(2); # Mudança de expoente
+            significand1 = num1/(2^bits_num2(2));
+            
+            # Significando 2 posicionado com o significando 1:
+
+            # --- SIGNIFICANDO 2 (início) ---
+
+            significand2 = 2^(-places_shifted); # Hidden bit
+            i = places_shifted + 1;
+            j = 3; # Primeira casa binária
+
+            # Preenchendo os 23 bits de precisão no novo expoente
+            while (i <= 23)
+                if (bits_num1(j) == 1) significand2 += 2^(-i);
+                endif
+                i += 1;
+                j += 1;
+            endwhile
+
+            # Preenchendo os bits auxiliares
+            if (25 - j == 0)
+                guardbit1 = bits_num1(j);
+                significand2 += 2^(-i);
+            elseif (25 - j == 1)
+                guardbit1 = bits_num1(j);
+                guardbit2 = bits_num1(j+1);
+                significand2 += (2^(-i) + 2^(-(i+1)));
+            elseif (25 - j >= 2)
+                guardbit1 = bits_num1(j);
+                guardbit2 = bits_num1(j+1);
+                significand2 += (2^(-i) + 2^(-(i+1)));
+                j += 2;
+                i += 2;
+
+                # Stingy bit
+                while (j <= 25)
+                    if (bits_num1(j) == 1)
+                        stingybit = 1;
+                        significand2 += 2^(-i);
+                        break;
+                    endif
+                    j += 1;
+                endwhile
+            endif
+
+            # --- SIGNIFICANDO 2 (fim) ---
+
+            # Somando os significandos
+            significandsum = significand1 + significand2;
+            d = 0; # Deslocamento
+            if (significandsum >= 2)
+                significandsum /= 2; # Tornando o hidden bit igual a 1
+                d = 1;
+            endif
+            significandsum = normalize_ray(significandsum, rounding); # Arredondando
+
+            # Soma
+            result = significandsum*2^(bits_num2(2) + d);
         endif
     endif
 
