@@ -26,7 +26,7 @@ function n = normalize_ray(num, rounding)
     
     # Caso em que o número é infinito, zero ou subnormal
     # (Na parte do arredondamento pode surgir esses casos também)
-    if ((num >= (Nmax + ulp(2^127)/2)) | (num == 0) | (num < Nmin))
+    if (num >= (Nmax + ulp(2^127)/2) | num == 0 | num < Nmin)
         n = 0;
         return;
     endif
@@ -166,9 +166,13 @@ function result = sumround(num1, num2, rounding)
     # Erro ou delegação
     if (num1 == 0 | num2 == 0)
         result = 0;
-        disp("A soma não pode ser efetuada, pois pelo menos um dos números não é normalizável.");
+        disp("A conta não pode ser efetuada, pois pelo menos um dos números não é normalizável.");
         break;
-    elseif (num1*num2 < 0) subround(num1, num2, rounding);
+    elseif (num1*num2 < 0)
+        if (num1 < 0) result = subround(num2, -num1, rounding);
+        else result = subround(num1, -num2, rounding);
+        endif
+        return;
     endif
 
     neg = 0;
@@ -186,7 +190,7 @@ function result = sumround(num1, num2, rounding)
     # Bits auxiliares
     guardbit1 = 0;
     guardbit2 = 0;
-    stingybit = 0;
+    stickybit = 0;
 
     # Configurando o maior e o menor número de forma que:
     # num1 >= num2 e bits_num1 >= bits_num2
@@ -236,11 +240,11 @@ function result = sumround(num1, num2, rounding)
         j += 2;
         i += 2;
 
-        # Stingy bit
+        # sticky bit
         while (j <= 25)
             if (bits_num2(j) == 1)
-                stingybit = 1;
-                significand2 += stingybit*2^(-i);
+                stickybit = 1;
+                significand2 += stickybit*2^(-i);
                 break;
             endif
             j += 1;
@@ -273,4 +277,111 @@ function result = subround(num1, num2, rounding)
     # Caso os números não estejam em ponto flutuante:
     num1 = normalize_ray(num1, rounding);
     num2 = normalize_ray(num2, rounding);
+
+    # Erro ou delegação
+    if (num1 == 0 | num2 == 0)
+        result = 0;
+        disp("A conta não pode ser efetuada, pois pelo menos um dos números não é normalizável.");
+        break;
+    elseif (num1*num2 < 0)
+        result = sumround(num1, -num2, rounding);
+        return;
+    elseif (num1 == num2)
+        result = 0;
+        disp("A conta não pode ser efetuada, pois ela resulta em 0, um número subnormal.");
+        break;
+    endif
+
+    # (-a) - (-b) --> b - a | Números negativos
+    if (num2 < 0) num2 *= -1;
+    endif
+
+    # Representação dos números acima em bits
+    bits_num1 = dectobin(num1); 
+    bits_num2 = dectobin(num2);
+
+    # Bits auxiliares
+    guardbit1 = 0;
+    guardbit2 = 0;
+    stickybit = 0;
+
+    # Configurando o "maior" e o "menor" número de forma que:
+    # num1 >= num2 e bits_num1 >= bits_num2 "expoentemente" falando.
+    if (bits_num1(2) < bits_num2(2))
+        # Troca de vetores
+        aux = bits_num1;
+        bits_num1 = bits_num2;
+        bits_num2 = aux;
+        # Troca de variáveis
+        aux = num1;
+        num1 = num2;
+        num2 = aux;
+    endif
+
+    places_shifted = bits_num1(2) - bits_num2(2); # Diferença de expoentes
+        
+    significand1 = num1/(2^bits_num1(2)); # Primeiro significando
+
+    # Significando 2 com o mesmo expoente do significando 1:
+
+    # --- OBTENÇÃO DO SIGNIFICANDO 2 (início) ---
+
+    significand2 = 2^(-places_shifted); # Hidden bit
+    i = places_shifted + 1;
+    j = 3; # Primeira casa binária
+
+    # Deslocando os 23 bits de precisão no novo expoente (se preciso)
+    while (i <= 23)
+        if (bits_num2(j) == 1) significand2 += 2^(-i);
+        endif
+        i += 1;
+        j += 1;
+    endwhile
+
+    # Preenchendo os bits auxiliares
+    if (25 - j == 0)
+        guardbit1 = bits_num2(j);
+        significand2 += guardbit1*2^(-i);
+    elseif (25 - j == 1)
+        guardbit1 = bits_num2(j);
+        guardbit2 = bits_num2(j+1);
+        significand2 += (guardbit1*2^(-i) + guardbit2*2^(-(i+1)));
+    elseif (25 - j >= 2)
+        guardbit1 = bits_num2(j);
+        guardbit2 = bits_num2(j+1);
+        significand2 += (guardbit1*2^(-i) + guardbit2*2^(-(i+1)));
+        j += 2;
+        i += 2;
+
+        # sticky bit
+        while (j <= 25)
+            if (bits_num2(j) == 1)
+                stickybit = 1;
+                significand2 += stickybit*2^(-i);
+                break;
+            endif
+            j += 1;
+        endwhile
+    endif
+
+    if (bits_num2(1) == 1) significand2 *= -1;
+    endif
+
+    # --- OBTENÇÃO DO SIGNIFICANDO 2 (fim) ---
+
+    # Somando os significandos
+    significandsum = significand1 + significand2;
+
+    d = 0; # Deslocamento
+    while (significandsum < 1)
+        significandsum *= 2; # Tornando o hidden bit igual a 1
+        d = 1;
+    endwhile
+
+    # Arredondando
+    significandsum = normalize_ray(significandsum, rounding);
+
+    # Somando
+    result = significandsum*2^(bits_num1(2) - d);
+
 endfunction
