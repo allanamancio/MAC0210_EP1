@@ -270,6 +270,14 @@ function result = sumround(num1, num2, rounding)
     if (neg == 1) result *= -1;
     endif
 
+    # Guards bits e Sticky bit
+    disp("Guard bit 1:");
+    disp(guardbit1);
+    disp("Guard bit 2:");
+    disp(guardbit2);
+    disp("Sticky bit:");
+    disp(stickybit);
+
 endfunction
 
 # Realiza a subtração arredonda de dois números em pontos flutuantes
@@ -385,5 +393,13 @@ function result = subround(num1, num2, rounding)
 
     # Somando
     result = significandsum*2^(bits_num1(2) - d);
+
+    # Guards bits e Sticky bit
+    disp("Guard bit 1:");
+    disp(guardbit1);
+    disp("Guard bit 2:");
+    disp(guardbit2);
+    disp("Sticky bit:");
+    disp(stickybit);
 
 endfunction
